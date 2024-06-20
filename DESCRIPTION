@@ -1,0 +1,20 @@
+Package: argList
+Type: Package
+Title: Modify list parameters of functions by global/local parameters
+Version: 0.1.0
+Date: 2024-06-14
+Authors@R:
+  person("Sigbert", "Klinke", email="sigbert@hu-berlin.de", role=c("aut", "cre"))
+Maintainer: The package maintainer <yourself@somewhere.net>
+Description: More about what it does (maybe more than one line)
+    Use four spaces when indenting paragraphs within the Description.
+License: GPL-3
+URL: https://github.com/sigbertklinke/plot.matrix (development version)
+RoxygenNote: 7.3.1
+Roxygen: list(markdown = TRUE)
+Encoding: UTF-8
+VignetteBuilder: knitr
+LazyData: true
+Suggests: 
+    knitr,
+    rmarkdown

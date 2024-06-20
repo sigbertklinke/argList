@@ -1,0 +1,231 @@
+---
+title: "argList"
+author: 
+- name: "Sigbert Klinke" 
+  email: sigbert@hu-berlin.de
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 4
+vignette: > 
+  %\VignetteIndexEntry{plot.matrix} 
+  %\VignetteEngine{knitr::rmarkdown} 
+  %\usepackage[utf8]{inputenc} 
+---
+  
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+collapse = TRUE,
+comment = "#>"
+)
+```
+```{r setup, include = FALSE}
+library('argList')
+```
+
+# Introduction
+
+When I develop a package, my package functions contain calls to other functions. I want to allow users to pass parameters to these other functions through parameter lists. Normally you would use the ellipsis (`...`) for this. However, this becomes complicated if parameters are to be passed to multiple functions.
+
+```{r, eval=FALSE}
+pkgfun <- function(x, y, ...) { 
+  fun1(x, ...)
+  fun2(y, ...)
+}
+```
+
+The problem is how to assign the parameters from the ellipsis to the functions `fun1` and `fun2`. One solution is to use parameter lists in `pkgfun`:
+
+```{r, eval=FALSE}
+pkgfun <- function(x, y, param1=list(a=1, cex=1), param2=list(b=2, cex=1.5), ...) { 
+  param1$x <- x
+  do.call(fun1, param1)
+  param2$y <- y
+  do.call(fun2, param2)
+}
+```
+
+In addition, it should be possible to use **global** parameters to set all parameters in the parameter lists that support this simultaneously if they have the same name:
+
+```{r, eval=FALSE}
+pkgfun(x, y, param1=list(a=1, cex=2), param2=list(b=2, cex=2))
+pkgfun(x, y, cex=2)        # alternative call
+```
+
+And it should be possible to set individual parameters of a parameter list with **local** parameters:
+
+```{r, eval=FALSE}
+# instead of calling
+pkgfun(x, y, param2=list(b=2, cex=3))
+pkgfun(x, y, param2.cex=3) # alternative call
+```
+
+And finally, if there are special parameters, it should be possible to specify their values using the name of the parameter list:
+
+```{r, eval=FALSE}
+# instead of calling
+pkgfun(x, y, param2=list(b=3, cex=1))
+pkgfun(x, y, param2=3)     # alternative call where `b` can be set by `param2`
+```
+
+# Installation
+
+The package can be installed from CRAN
+
+```{r, eval=FALSE}
+install.packages('argList')
+```
+
+or the development version from GitHub
+
+```{r, eval=FALSE}
+# install.packages('devtools') # if necessary
+devtools::install_github('sigbertklinke/argList')
+```
+
+# An example
+
+In a function `test` we call a `plot` command and two `axis` commands:
+
+```{r, fig.width=3, fig.height=3}
+test <- function(x, y, ...) {
+  plot(x, y, type="n", axes=FALSE)
+  axis(side=1, at=pretty(x))
+  axis(side=2, at=pretty(y))  
+  box()
+}
+
+test(iris[,1], iris[,2])
+```
+
+**Step 1:** We add three parameter lists with default values
+
+```{r, fig.width=3, fig.height=3}
+test <- function(x, y, plot=list(type="n", axes=FALSE, xlab="xlab", ylab="ylab"), 
+                 axis1=list(side=1), axis2=list(side=2), ...) {
+  plot$x <- x
+  plot$y <- y
+  do.call('plot', plot)
+  axis1$at <- pretty(x)
+  do.call('axis', axis1)
+  axis2$at <- pretty(y)
+  do.call('axis', axis2)
+  box()
+}
+
+test(iris[,1], iris[,2])
+```
+
+**Step 2:** We specify which parameters of the functions `plot` and `axis` can be controlled globally.
+
+```{r}
+setParamList('plotparams', graphics::plot.default, deny=c('...', 'x', 'y', 'axes'))
+setParamList('axisparams', graphics::axis, deny=c('...', 'at', 'labels'))
+# now have look which parameters are allowed
+getParamList()
+```
+
+If `fun` is provided (not `NULL`), its formal arguments are obtained using `formals(fun)`. It's important to note that the first parameter of `setParamList` serves as an identifier for a distinct parameter set. This allows you to define multiple sets of parameters that can be used in different function call of the same function.
+
+**Step 3:** We modify our function such that **local** and **global** parameters are taken into account.
+
+```{r, fig.width=3, fig.height=3}
+test <- function(x, y, plot=list(type="n", axes=FALSE, xlab="xlab", ylab="ylab"),
+                 axis1=list(side=1), axis2=list(side=2), ...) {
+  args <- update(argList(match.call(), formals(), axis1.side='axis1', axis2.side='axis2'),
+                 plot='plotparams', axis1='axisparams', axis2='axisparams')
+  #
+  args[['plot']]$x <- x
+  args[['plot']]$y <- y
+  do.call('plot', args[['plot']])
+  args[['axis1']]$at <- pretty(x)
+  do.call('axis', args[['axis1']])
+  args[['axis2']]$at <- pretty(y)
+  do.call('axis', args[['axis2']])
+  box()
+  invisible(args)
+}
+
+# define possible global parameter
+setParamList('plotparams', graphics::plot.default, deny=c('...', 'x', 'y', 'axes'))
+setParamList('axisparams', graphics::axis, deny=c('...', 'at', 'labels'))
+# 
+test(iris[,1], iris[,2])
+# propagate `main` to `plot$main`
+test(iris[,1], iris[,2], main="plain")
+# and propagate `axis2` to `axis2$side`
+test(iris[,1], iris[,2], axis2=4, main="axis2==4")
+# `axis2.side` has priority over `axis2=4`
+test(iris[,1], iris[,2], axis2=4, axis2.side=2, main="axis2.side=2")
+```
+
+The argument list is transformed by:
+
+* `axis1.side='axis1'`: If a parameter `axis1` exists and is not a list then value of `axis1` is propagate to the local variable  `axis1.side`. The parameter `axis1` is set to its default `axis1=list(side=1)`.
+* `axis2.side='axis2'`: If a parameter `axis2` exists and is not a list then value of `axis2` is propagate to the local variable  `axis2.side`. The parameter `axis2` is set to its default `axis2=list(side=2)`.
+* `plot='plotparams'`: For the `plot` argument 
+* is checked if a global parameter is available and added to the parameter list for `plot` and
+* any local variable is added to the parameter list for `plot`.
+* the same is done for `axis1` and `axis2`.
+
+You may a look to the differences of the arguments in each step: 
+
+```{r}
+test <- function(x, y, plot=list(type="n", axes=FALSE, xlab="xlab", ylab="ylab"),
+                 axis1=list(side=1), axis2=list(side=2), ...) {
+  arg0 <- argList(match.call(), formals())
+  arg1 <- argList(match.call(), formals(), axis1.side='axis1', axis2.side='axis2')
+  arg2 <- update(arg1, plot='plotparams', axis1='axisparams', axis2='axisparams')
+  # compare the modification at the argument lists
+  cat(diff(arg0, arg1, 
+           xtitle="argList(match.call(), formals())", 
+           ytitle="argList(match.call(), formals(), axis1.side='axis1', axis2.side='axis2')"))
+  cat(diff(arg1, arg2, 
+           xtitle="argList(match.call(), formals(), axis1.side='axis1', axis2.side='axis2')", 
+           ytitle="update(., plot='plotparams', axis1='axisparams', axis2='axisparams')"))
+}
+
+# define possible global parameter
+setParamList('plotparams', graphics::plot.default, deny=c('...', 'x', 'y', 'axes'))
+setParamList('axisparams', graphics::axis, deny=c('...', 'at', 'labels'))
+str(getParamList())
+test(iris[,1], iris[,2], axis2=4, axis2.side=2, main="axis2.side=2")
+```
+
+# The algorithm
+
+We differentiate between three categories of variables:
+
+* __Global variables__, which can be present in multiple function calls
+* __Argument lists__ for a function's invocation and
+* __Local variables__, which overwrite elements from the argument lists'"
+
+Let us assume that in a function `main`, we call another function `fun`. The function `main` has an argument list `funparam=list(...)` allowing us to call `fun` within `main` using `do.call(fun, funparam)`.
+
+* __Step 1:__ We use `match.call()` to obtain the argument list as it was provided to `main`. The `formals()` function retrieves the default arguments of `main`. We then construct an argument list for `main` by adding any missing default argument from `main` to the argument list obtained from `match.call()`.
+* __Step 2:__ If parameters other than `match.call()` and `formals()` in `argList` are not a list, they are defined as additional local variables. The parameter will be replaced by its default argument as defined in `formals()`.
+* __Step 3:__ Global variables will be added to the argument lists.
+* __Step 4:__ All local variables are added to their argument lists.
+
+The priority of the variables is:
+
+1. If a local variable is available their value will be taken. This does depend how the local variable was created, by propagation, user call, or function definition.
+2. If no local variable is available the values from the user call are used.
+3. Otherwise the default argument list is used.
+
+# Troubleshooting and FAQs
+
+__Is the representation unambiguous?__  
+No, you might run into trouble, if you use a dot for other parameter names, e.g. in
+
+`main <- function(axis1.side=4, axis1=list(side=2))`
+
+# Appendix
+Additional datasets and code snippets.
+
+
+
+
+
+
